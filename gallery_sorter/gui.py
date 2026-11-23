@@ -145,7 +145,6 @@ class LensortGUI:
             btn.pack(side=tk.LEFT, padx=3)
 
         user_home = Path.home()
-        create_preset_btn("⚡ 5s Demo Media", Path(__file__).resolve().parent.parent / "demo_media")
         create_preset_btn("🖼️ OneDrive Pictures", user_home / "OneDrive" / "Pictures")
         create_preset_btn("📁 Local Pictures", user_home / "Pictures")
         create_preset_btn("📥 Downloads", user_home / "Downloads")

@@ -1,4 +1,4 @@
-﻿# Lensort 1-Line Installer for Windows
+# Lensort 1-Line Installer for Windows
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " 📸 Lensort — Installing Smart Media Sorter on your PC" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Cyan
