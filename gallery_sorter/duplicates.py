@@ -144,34 +144,54 @@ class DuplicateDetector:
             if h is not None:
                 hashes.append((p, h))
 
+        # Multi-index hashing (Pigeonhole principle):
+        # Split 64-bit hash into 4 chunks of 16 bits.
+        # If Hamming distance <= 3, at least one 16-bit chunk MUST be identical!
+        # This reduces comparisons from O(N^2) to near O(N).
+        block_masks = [
+            (0xFFFF << 48, 48),
+            (0xFFFF << 32, 32),
+            (0xFFFF << 16, 16),
+            (0xFFFF, 0)
+        ]
+        buckets = [defaultdict(list) for _ in range(4)]
+        for idx, (path, h) in enumerate(hashes):
+            for b_idx, (mask, shift) in enumerate(block_masks):
+                chunk = (h & mask) >> shift
+                buckets[b_idx][chunk].append(idx)
+
+        candidate_pairs: Set[Tuple[int, int]] = set()
+        for b_idx in range(4):
+            for chunk, indices in buckets[b_idx].items():
+                if len(indices) > 1:
+                    for i in range(len(indices)):
+                        for j in range(i + 1, len(indices)):
+                            idx1, idx2 = sorted((indices[i], indices[j]))
+                            candidate_pairs.add((idx1, idx2))
+
         similar_pairs: List[Tuple[Path, Path, int]] = []
         seen_dups: Set[Path] = set()
 
-        # O(N^2) comparison with early exits or bucket optimization
-        # For typical batch sizes this is fast because it's pure bitwise XOR in C
-        n = len(hashes)
-        for i in range(n):
-            path_i, hash_i = hashes[i]
-            if path_i in seen_dups:
-                continue
-            for j in range(i + 1, n):
-                path_j, hash_j = hashes[j]
-                if path_j in seen_dups:
-                    continue
-                dist = cls.hamming_distance(hash_i, hash_j)
-                if dist <= threshold:
-                    # Larger file is considered the original (higher quality)
-                    try:
-                        size_i = os.path.getsize(path_i)
-                        size_j = os.path.getsize(path_j)
-                        if size_i >= size_j:
-                            orig, dup = path_i, path_j
-                        else:
-                            orig, dup = path_j, path_i
-                    except OSError:
-                        orig, dup = path_i, path_j
+        for idx1, idx2 in candidate_pairs:
+            path_i, hash_i = hashes[idx1]
+            path_j, hash_j = hashes[idx2]
 
-                    similar_pairs.append((orig, dup, dist))
-                    seen_dups.add(dup)
+            if path_i in seen_dups or path_j in seen_dups:
+                continue
+
+            dist = cls.hamming_distance(hash_i, hash_j)
+            if dist <= threshold:
+                try:
+                    size_i = os.path.getsize(path_i)
+                    size_j = os.path.getsize(path_j)
+                    if size_i >= size_j:
+                        orig, dup = path_i, path_j
+                    else:
+                        orig, dup = path_j, path_i
+                except OSError:
+                    orig, dup = path_i, path_j
+
+                similar_pairs.append((orig, dup, dist))
+                seen_dups.add(dup)
 
         return similar_pairs
