@@ -1,7 +1,7 @@
 """
 Desktop Graphical User Interface (GUI) for Lensort.
-Built using Python's native Tkinter + ttk (zero third-party dependencies required).
-Runs out-of-the-box on Windows, macOS, and Linux with a high-contrast dark theme.
+Features high-contrast dark theme, live multithreaded scanning,
+dynamic motion animation of files moving to target folders, and live ticking badges.
 """
 
 import os
@@ -12,27 +12,27 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from .config import OrganizerConfig
-from .organizer import GallerySorter, run_undo, SortReport
+from .organizer import GallerySorter, run_undo, SortReport, PlannedOperation
 from .ui import format_bytes
 
 class LensortGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Lensort — Smart Gallery & Photo Organizer")
-        self.root.geometry("1020x720")
-        self.root.minsize(800, 560)
+        self.root.geometry("1060x760")
+        self.root.minsize(840, 600)
 
         # High-Contrast Dark Theme Palette
-        self.bg_color = "#121214"      # Dark background
-        self.card_bg = "#1e1e24"       # Dark Card background
-        self.entry_bg = "#272730"      # High contrast entry field background
-        self.accent_color = "#38bdf8"   # Bright Sky Blue 400
-        self.accent_hover = "#0284c7"   # Sky Blue 600
-        self.text_color = "#ffffff"     # Pure Crisp White
-        self.dim_text = "#9ca3af"       # Muted Gray
-        self.success_color = "#22c55e"  # Emerald Green 500
-        self.warning_color = "#eab308"  # Yellow 500
-        self.danger_color = "#ef4444"   # Red 500
+        self.bg_color = "#121214"
+        self.card_bg = "#1e1e24"
+        self.entry_bg = "#272730"
+        self.accent_color = "#38bdf8"   # Sky 400
+        self.accent_hover = "#0284c7"
+        self.text_color = "#ffffff"
+        self.dim_text = "#9ca3af"
+        self.success_color = "#22c55e"  # Green 500
+        self.warning_color = "#facc15"  # Amber 400
+        self.badge_bg = "#2d2d38"
 
         self.root.configure(bg=self.bg_color)
         self._setup_styles()
@@ -45,7 +45,18 @@ class LensortGUI:
         self.dedup_var = tk.BooleanVar(value=True)
         self.similar_var = tk.BooleanVar(value=True)
         self.geo_var = tk.BooleanVar(value=True)
-        self.status_var = tk.StringVar(value="Ready. Select a folder to scan.")
+
+        # Dynamic Live Stats
+        self.status_var = tk.StringVar(value="Ready. Select folder and click 'RUN DRY-RUN PREVIEW'.")
+        self.active_file_var = tk.StringVar(value="Waiting to start...")
+        self.progress_pct_var = tk.DoubleVar(value=0.0)
+
+        # Live Badges
+        self.count_screenshots = tk.StringVar(value="📱 Screenshots: 0")
+        self.count_whatsapp = tk.StringVar(value="💬 WhatsApp: 0")
+        self.count_camera = tk.StringVar(value="📷 Camera: 0")
+        self.count_videos = tk.StringVar(value="🎥 Videos: 0")
+        self.count_dups = tk.StringVar(value="⚠️ Duplicates: 0")
 
         self.current_report: SortReport = None
         self.manifest_path: Path = None
@@ -60,21 +71,14 @@ class LensortGUI:
             pass
 
         self.style.configure(".", background=self.bg_color, foreground=self.text_color, font=("Segoe UI", 10))
-        self.style.configure("Card.TFrame", background=self.card_bg)
-        self.style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"), foreground=self.accent_color, background=self.bg_color)
-        self.style.configure("Subtitle.TLabel", font=("Segoe UI", 9), foreground=self.dim_text, background=self.bg_color)
-        self.style.configure("Section.TLabel", font=("Segoe UI", 10, "bold"), foreground=self.text_color, background=self.card_bg)
-
-        # Button Styles
-        self.style.configure("TButton", font=("Segoe UI", 9, "bold"), padding=6, background="#3f3f46", foreground="#ffffff")
-        self.style.map("TButton", background=[("active", "#52525b")])
+        self.style.configure("Horizontal.TProgressbar", background="#38bdf8", troughcolor="#272730", bordercolor="#1e1e24")
 
         # Treeview styling
         self.style.configure("Treeview",
                              background="#1a1a20",
                              foreground="#ffffff",
                              fieldbackground="#1a1a20",
-                             rowheight=26,
+                             rowheight=25,
                              font=("Segoe UI", 9))
         self.style.map("Treeview", background=[("selected", "#0284c7")])
         self.style.configure("Treeview.Heading",
@@ -85,7 +89,7 @@ class LensortGUI:
     def _build_ui(self):
         # 1. Header Frame
         header_frame = tk.Frame(self.root, bg=self.bg_color)
-        header_frame.pack(fill=tk.X, padx=20, pady=(12, 6))
+        header_frame.pack(fill=tk.X, padx=20, pady=(10, 4))
 
         tk.Label(
             header_frame,
@@ -97,75 +101,51 @@ class LensortGUI:
 
         tk.Label(
             header_frame,
-            text="Intelligent Photo, Screenshot & Video Organizer with EXIF, GPS & Duplicate Detection",
+            text="Intelligent Photo, Screenshot & Video Organizer with Live Dynamic Sorting",
             font=("Segoe UI", 9),
             fg=self.dim_text,
             bg=self.bg_color
         ).pack(anchor=tk.W)
 
-        # 2. Paths Input Card (HIGH CONTRAST ENTRY BOXES)
-        path_card = tk.Frame(self.root, bg=self.card_bg, padx=14, pady=10, relief="groove", bd=1)
-        path_card.pack(fill=tk.X, padx=20, pady=4)
+        # 2. Paths Input Card
+        path_card = tk.Frame(self.root, bg=self.card_bg, padx=14, pady=8, relief="groove", bd=1)
+        path_card.pack(fill=tk.X, padx=20, pady=3)
 
-        # Source Row
-        tk.Label(path_card, text="📁 Source Folder (Messy):", font=("Segoe UI", 10, "bold"), fg=self.text_color, bg=self.card_bg).grid(row=0, column=0, sticky=tk.W, pady=4)
-        
-        # High Contrast Dark Entry with Pure White Text & Cyan Cursor
+        # Source
+        tk.Label(path_card, text="📁 Source Folder (Messy):", font=("Segoe UI", 9, "bold"), fg=self.text_color, bg=self.card_bg).grid(row=0, column=0, sticky=tk.W, pady=3)
         self.src_entry = tk.Entry(
-            path_card,
-            textvariable=self.source_dir_var,
-            font=("Segoe UI", 10),
-            bg=self.entry_bg,
-            fg="#ffffff",
-            insertbackground=self.accent_color,
-            relief="solid",
-            bd=1,
-            highlightthickness=1,
-            highlightbackground="#3f3f46",
-            highlightcolor=self.accent_color
+            path_card, textvariable=self.source_dir_var, font=("Segoe UI", 10),
+            bg=self.entry_bg, fg="#ffffff", insertbackground=self.accent_color,
+            relief="solid", bd=1, highlightthickness=1, highlightbackground="#3f3f46", highlightcolor=self.accent_color
         )
-        self.src_entry.grid(row=0, column=1, padx=10, pady=4, sticky=tk.EW)
-        
-        btn_src = tk.Button(
+        self.src_entry.grid(row=0, column=1, padx=8, pady=3, sticky=tk.EW)
+        tk.Button(
             path_card, text="Browse...", font=("Segoe UI", 9, "bold"),
-            bg="#3f3f46", fg="#ffffff", activebackground="#52525b", activeforeground="#ffffff",
-            relief="flat", padx=10, pady=3, command=self._browse_source
-        )
-        btn_src.grid(row=0, column=2, padx=4)
+            bg="#3f3f46", fg="#ffffff", activebackground="#52525b", relief="flat", padx=10, pady=2,
+            command=self._browse_source
+        ).grid(row=0, column=2, padx=4)
 
-        # Destination Row
-        tk.Label(path_card, text="📂 Destination Folder:", font=("Segoe UI", 10, "bold"), fg=self.text_color, bg=self.card_bg).grid(row=1, column=0, sticky=tk.W, pady=4)
-        
+        # Destination
+        tk.Label(path_card, text="📂 Destination Folder:", font=("Segoe UI", 9, "bold"), fg=self.text_color, bg=self.card_bg).grid(row=1, column=0, sticky=tk.W, pady=3)
         self.dest_entry = tk.Entry(
-            path_card,
-            textvariable=self.dest_dir_var,
-            font=("Segoe UI", 10),
-            bg=self.entry_bg,
-            fg="#ffffff",
-            insertbackground=self.accent_color,
-            relief="solid",
-            bd=1,
-            highlightthickness=1,
-            highlightbackground="#3f3f46",
-            highlightcolor=self.accent_color
+            path_card, textvariable=self.dest_dir_var, font=("Segoe UI", 10),
+            bg=self.entry_bg, fg="#ffffff", insertbackground=self.accent_color,
+            relief="solid", bd=1, highlightthickness=1, highlightbackground="#3f3f46", highlightcolor=self.accent_color
         )
-        self.dest_entry.grid(row=1, column=1, padx=10, pady=4, sticky=tk.EW)
-
-        btn_dst = tk.Button(
+        self.dest_entry.grid(row=1, column=1, padx=8, pady=3, sticky=tk.EW)
+        tk.Button(
             path_card, text="Browse...", font=("Segoe UI", 9, "bold"),
-            bg="#3f3f46", fg="#ffffff", activebackground="#52525b", activeforeground="#ffffff",
-            relief="flat", padx=10, pady=3, command=self._browse_dest
-        )
-        btn_dst.grid(row=1, column=2, padx=4)
+            bg="#3f3f46", fg="#ffffff", activebackground="#52525b", relief="flat", padx=10, pady=2,
+            command=self._browse_dest
+        ).grid(row=1, column=2, padx=4)
 
         path_card.columnconfigure(1, weight=1)
 
-        # 3. Options Card
-        opts_card = tk.Frame(self.root, bg=self.card_bg, padx=14, pady=8, relief="groove", bd=1)
-        opts_card.pack(fill=tk.X, padx=20, pady=4)
+        # 3. Mode & Options Card
+        opts_card = tk.Frame(self.root, bg=self.card_bg, padx=14, pady=6, relief="groove", bd=1)
+        opts_card.pack(fill=tk.X, padx=20, pady=3)
 
-        # Row 1: Mode Selection
-        tk.Label(opts_card, text="Sorting Mode:", font=("Segoe UI", 10, "bold"), fg=self.accent_color, bg=self.card_bg).grid(row=0, column=0, sticky=tk.W, padx=4)
+        tk.Label(opts_card, text="Sorting Mode:", font=("Segoe UI", 9, "bold"), fg=self.accent_color, bg=self.card_bg).grid(row=0, column=0, sticky=tk.W, padx=4)
         modes = [
             ("Camera/Screenshots/Date (Smart)", "source-date"),
             ("Date Only (YYYY/MM)", "date-only"),
@@ -173,133 +153,122 @@ class LensortGUI:
             ("Source Category Only", "source-only")
         ]
         for col_idx, (text, val) in enumerate(modes):
-            r = tk.Radiobutton(
+            tk.Radiobutton(
                 opts_card, text=text, value=val, variable=self.mode_var,
                 bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-                activebackground=self.card_bg, activeforeground=self.accent_color,
-                font=("Segoe UI", 9)
-            )
-            r.grid(row=0, column=col_idx + 1, padx=6, sticky=tk.W)
+                activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9)
+            ).grid(row=0, column=col_idx + 1, padx=5, sticky=tk.W)
 
-        # Row 2: Duplicate Checkboxes & Actions
         chk_frame = tk.Frame(opts_card, bg=self.card_bg)
-        chk_frame.grid(row=1, column=0, columnspan=5, sticky=tk.W, pady=(8, 0))
+        chk_frame.grid(row=1, column=0, columnspan=5, sticky=tk.W, pady=(4, 0))
 
         tk.Checkbutton(
             chk_frame, text="Exact Duplicates (SHA-256)", variable=self.dedup_var,
-            bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-            activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9)
-        ).pack(side=tk.LEFT, padx=6)
+            bg=self.card_bg, fg=self.text_color, selectcolor="#121214", font=("Segoe UI", 9)
+        ).pack(side=tk.LEFT, padx=5)
 
         tk.Checkbutton(
-            chk_frame, text="Visual Similarities (pHash/dHash)", variable=self.similar_var,
-            bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-            activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9)
-        ).pack(side=tk.LEFT, padx=6)
+            chk_frame, text="Visual Similarities (pHash)", variable=self.similar_var,
+            bg=self.card_bg, fg=self.text_color, selectcolor="#121214", font=("Segoe UI", 9)
+        ).pack(side=tk.LEFT, padx=5)
 
         tk.Checkbutton(
-            chk_frame, text="Offline GPS Reverse-Geocoding", variable=self.geo_var,
-            bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-            activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9)
-        ).pack(side=tk.LEFT, padx=6)
+            chk_frame, text="Offline GPS Geocoding", variable=self.geo_var,
+            bg=self.card_bg, fg=self.text_color, selectcolor="#121214", font=("Segoe UI", 9)
+        ).pack(side=tk.LEFT, padx=5)
 
-        tk.Label(chk_frame, text="│  Action:", font=("Segoe UI", 10, "bold"), fg=self.warning_color, bg=self.card_bg).pack(side=tk.LEFT, padx=(15, 6))
+        tk.Label(chk_frame, text="│  Action:", font=("Segoe UI", 9, "bold"), fg=self.warning_color, bg=self.card_bg).pack(side=tk.LEFT, padx=(12, 4))
         tk.Radiobutton(
             chk_frame, text="Safe Copy", value="copy", variable=self.action_var,
-            bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-            activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9, "bold")
-        ).pack(side=tk.LEFT, padx=4)
-
+            bg=self.card_bg, fg=self.text_color, selectcolor="#121214", font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT, padx=3)
         tk.Radiobutton(
             chk_frame, text="Fast Move", value="move", variable=self.action_var,
-            bg=self.card_bg, fg=self.text_color, selectcolor="#121214",
-            activebackground=self.card_bg, activeforeground=self.accent_color, font=("Segoe UI", 9, "bold")
-        ).pack(side=tk.LEFT, padx=4)
+            bg=self.card_bg, fg=self.text_color, selectcolor="#121214", font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT, padx=3)
 
-        # 4. BIG PROMINENT ACTION TOOLBAR (ALWAYS VISIBLE RIGHT IN THE CENTER)
+        # 4. Action Toolbar
         action_toolbar = tk.Frame(self.root, bg=self.bg_color)
         action_toolbar.pack(fill=tk.X, padx=20, pady=(6, 4))
 
-        # Big Cyan DRY RUN PREVIEW Button
         self.btn_preview = tk.Button(
-            action_toolbar,
-            text="🔍  1. RUN DRY-RUN PREVIEW",
-            font=("Segoe UI", 11, "bold"),
-            bg=self.accent_color,
-            fg="#000000",
-            activebackground=self.accent_hover,
-            activeforeground="#ffffff",
-            relief="flat",
-            padx=16,
-            pady=8,
-            cursor="hand2",
-            command=self._on_preview
+            action_toolbar, text="🔍  1. RUN DRY-RUN PREVIEW", font=("Segoe UI", 11, "bold"),
+            bg=self.accent_color, fg="#000000", activebackground=self.accent_hover,
+            relief="flat", padx=16, pady=7, cursor="hand2", command=self._on_preview
         )
         self.btn_preview.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Big Green EXECUTE SORTING Button
         self.btn_execute = tk.Button(
-            action_toolbar,
-            text="🚀  2. EXECUTE SORTING",
-            font=("Segoe UI", 11, "bold"),
-            bg=self.success_color,
-            fg="#000000",
-            activebackground="#16a34a",
-            activeforeground="#ffffff",
-            relief="flat",
-            padx=16,
-            pady=8,
-            cursor="hand2",
-            command=self._on_execute
+            action_toolbar, text="🚀  2. EXECUTE SORTING", font=("Segoe UI", 11, "bold"),
+            bg=self.success_color, fg="#000000", activebackground="#16a34a",
+            relief="flat", padx=16, pady=7, cursor="hand2", command=self._on_execute
         )
         self.btn_execute.pack(side=tk.LEFT, padx=10)
 
-        # 1-Click Undo Button
         self.btn_undo = tk.Button(
-            action_toolbar,
-            text="🔄  1-Click Undo",
-            font=("Segoe UI", 10, "bold"),
-            bg="#374151",
-            fg="#f3f4f6",
-            activebackground="#4b5563",
-            activeforeground="#ffffff",
-            relief="flat",
-            padx=14,
-            pady=8,
-            cursor="hand2",
-            command=self._on_undo
+            action_toolbar, text="🔄  1-Click Undo", font=("Segoe UI", 10, "bold"),
+            bg="#374151", fg="#f3f4f6", activebackground="#4b5563",
+            relief="flat", padx=14, pady=7, cursor="hand2", command=self._on_undo
         )
         self.btn_undo.pack(side=tk.RIGHT)
 
-        # 5. Summary Info Bar
-        self.summary_frame = tk.Frame(self.root, bg=self.card_bg, padx=12, pady=6)
-        self.summary_frame.pack(fill=tk.X, padx=20, pady=(4, 4))
+        # 5. DYNAMIC LIVE ANIMATION & TICKING BADGES CARD
+        anim_card = tk.Frame(self.root, bg=self.card_bg, padx=14, pady=6, relief="ridge", bd=1)
+        anim_card.pack(fill=tk.X, padx=20, pady=3)
 
-        self.lbl_scanned = tk.Label(self.summary_frame, text="Scanned: 0 files", font=("Segoe UI", 9, "bold"), fg=self.text_color, bg=self.card_bg)
-        self.lbl_scanned.pack(side=tk.LEFT, padx=8)
+        # Row 1: Live Animated Moving Banner
+        banner_frame = tk.Frame(anim_card, bg=self.card_bg)
+        banner_frame.pack(fill=tk.X, pady=(0, 4))
 
-        self.lbl_dups = tk.Label(self.summary_frame, text="Duplicates: 0 (0 B saveable)", font=("Segoe UI", 9, "bold"), fg=self.warning_color, bg=self.card_bg)
-        self.lbl_dups.pack(side=tk.LEFT, padx=12)
+        tk.Label(
+            banner_frame, text="⚡ Live Action:", font=("Segoe UI", 9, "bold"),
+            fg=self.warning_color, bg=self.card_bg
+        ).pack(side=tk.LEFT, padx=(0, 6))
 
-        self.lbl_breakdown = tk.Label(self.summary_frame, text="Categories: None", font=("Segoe UI", 9), fg=self.dim_text, bg=self.card_bg)
-        self.lbl_breakdown.pack(side=tk.LEFT, padx=12)
+        # Dynamic Ticker label showing current image flying to folder
+        self.lbl_ticker = tk.Label(
+            banner_frame, textvariable=self.active_file_var, font=("Segoe UI", 9, "bold"),
+            fg="#38bdf8", bg=self.card_bg, anchor=tk.W
+        )
+        self.lbl_ticker.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # 6. Bottom Status Bar (PACKED AT THE VERY BOTTOM FIRST SO IT NEVER DISAPPEARS)
-        bottom_frame = tk.Frame(self.root, bg=self.bg_color, padx=4, pady=4)
+        # Row 2: Live Progress Bar
+        self.progress_bar = ttk.Progressbar(
+            anim_card, orient=tk.HORIZONTAL, mode="determinate",
+            variable=self.progress_pct_var, style="Horizontal.TProgressbar"
+        )
+        self.progress_bar.pack(fill=tk.X, pady=3)
+
+        # Row 3: Live Ticking Category Badges
+        badge_frame = tk.Frame(anim_card, bg=self.card_bg)
+        badge_frame.pack(fill=tk.X, pady=(4, 2))
+
+        def create_badge(parent, textvar, color):
+            b = tk.Label(
+                parent, textvariable=textvar, font=("Segoe UI", 9, "bold"),
+                bg=self.badge_bg, fg=color, padx=10, pady=2, relief="flat"
+            )
+            b.pack(side=tk.LEFT, padx=4)
+            return b
+
+        create_badge(badge_frame, self.count_screenshots, "#38bdf8")
+        create_badge(badge_frame, self.count_whatsapp, "#4ade80")
+        create_badge(badge_frame, self.count_camera, "#f472b6")
+        create_badge(badge_frame, self.count_videos, "#a78bfa")
+        create_badge(badge_frame, self.count_dups, "#fbbf24")
+
+        # 6. Bottom Status Bar (Packed Bottom First)
+        bottom_frame = tk.Frame(self.root, bg=self.bg_color, padx=4, pady=3)
         bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(2, 6))
 
-        self.lbl_status = tk.Label(
-            bottom_frame,
-            textvariable=self.status_var,
-            font=("Segoe UI", 9, "italic"),
-            fg=self.accent_color,
-            bg=self.bg_color
-        )
-        self.lbl_status.pack(side=tk.LEFT)
+        tk.Label(
+            bottom_frame, textvariable=self.status_var,
+            font=("Segoe UI", 9, "italic"), fg=self.accent_color, bg=self.bg_color
+        ).pack(side=tk.LEFT)
 
         # 7. Preview Table (Fills All Remaining Space in Middle)
         table_frame = tk.Frame(self.root, bg=self.bg_color)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(2, 4))
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=3)
 
         columns = ("file", "category", "date", "target", "note")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
@@ -357,52 +326,93 @@ class LensortGUI:
             messagebox.showerror("Invalid Path", str(e))
             return
 
-        self.status_var.set("⏳ Scanning and analyzing media files... Please wait.")
-        self.btn_preview.configure(state=tk.DISABLED, text="⏳ Analyzing...")
-
-        def worker():
-            sorter = GallerySorter(config)
-            report = sorter.plan()
-            self.root.after(0, lambda: self._update_preview_results(report))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _update_preview_results(self, report: SortReport):
-        self.btn_preview.configure(state=tk.NORMAL, text="🔍  1. RUN DRY-RUN PREVIEW")
-        self.current_report = report
-
-        # Clear Treeview
+        # Clear existing Treeview rows
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        # Populate rows
-        for op in report.planned_operations:
-            note = ""
-            if op.is_duplicate:
-                note = f"⚠️ Dup ({op.duplicate_type})"
+        self.btn_preview.configure(state=tk.DISABLED, text="⏳ Analyzing Live...")
+        self.progress_pct_var.set(0.0)
+        self.status_var.set("Scanning media files in parallel...")
 
+        # Reset category counters
+        self.count_screenshots.set("📱 Screenshots: 0")
+        self.count_whatsapp.set("💬 WhatsApp: 0")
+        self.count_camera.set("📷 Camera: 0")
+        self.count_videos.set("🎥 Videos: 0")
+        self.count_dups.set("⚠️ Duplicates: 0")
+
+        def on_progress(data: dict):
+            # Thread-safe UI update
+            self.root.after(0, lambda: self._handle_progress_update(data))
+
+        def worker():
+            sorter = GallerySorter(config)
+            report = sorter.plan(progress_callback=on_progress)
+            self.root.after(0, lambda: self._on_preview_complete(report))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_progress_update(self, data: dict):
+        current = data.get("current", 0)
+        total = max(1, data.get("total", 1))
+        pct = (current / total) * 100.0
+        self.progress_pct_var.set(pct)
+
+        stage = data.get("stage", "")
+        filename = data.get("file", "")
+        category = data.get("category", "")
+        target = data.get("target", "")
+
+        # Dynamic motion banner animation
+        if filename:
+            self.active_file_var.set(f"[{filename}]  ────────►  📁 {target}")
+            self.status_var.set(f"Processed: {current} / {total} files ({pct:.1f}%)")
+
+        # Live Badges update
+        cat_counts = data.get("category_counts", {})
+        if cat_counts:
+            self.count_screenshots.set(f"📱 Screenshots: {cat_counts.get('Screenshots', 0)}")
+            self.count_whatsapp.set(f"💬 WhatsApp: {cat_counts.get('WhatsApp & Social', 0)}")
+            self.count_camera.set(f"📷 Camera: {cat_counts.get('Camera Originals', 0)}")
+            self.count_videos.set(f"🎥 Videos: {cat_counts.get('Videos', 0)}")
+        if "duplicates_count" in data:
+            self.count_dups.set(f"⚠️ Duplicates: {data['duplicates_count']}")
+
+        # Stream row into Treeview live
+        op: PlannedOperation = data.get("operation")
+        if op:
+            note = f"⚠️ Dup ({op.duplicate_type})" if op.is_duplicate else ""
             try:
                 rel_target = str(op.dest_path.relative_to(op.dest_path.parents[2]))
             except Exception:
                 rel_target = op.dest_path.name
 
-            self.tree.insert("", tk.END, values=(
+            item = self.tree.insert("", tk.END, values=(
                 op.source_path.name,
                 op.category,
                 op.date_str,
                 rel_target,
                 note
             ))
+            # Auto-scroll to show dynamic movement
+            self.tree.see(item)
 
-        # Update Summary Badges
-        self.lbl_scanned.config(text=f"Scanned: {report.total_scanned} files ({format_bytes(report.total_size_bytes)})")
+    def _on_preview_complete(self, report: SortReport):
+        self.btn_preview.configure(state=tk.NORMAL, text="🔍  1. RUN DRY-RUN PREVIEW")
+        self.current_report = report
+        self.progress_pct_var.set(100.0)
+
+        # Final category badges
+        cats = report.category_counts
+        self.count_screenshots.set(f"📱 Screenshots: {cats.get('Screenshots', 0)}")
+        self.count_whatsapp.set(f"💬 WhatsApp: {cats.get('WhatsApp & Social', 0)}")
+        self.count_camera.set(f"📷 Camera: {cats.get('Camera Originals', 0)}")
+        self.count_videos.set(f"🎥 Videos: {cats.get('Videos', 0)}")
         dup_total = report.exact_duplicates_count + report.similar_duplicates_count
-        self.lbl_dups.config(text=f"Duplicates: {dup_total} ({format_bytes(report.duplicate_saved_bytes)} saveable)")
+        self.count_dups.set(f"⚠️ Duplicates: {dup_total}")
 
-        cat_summary = " | ".join(f"{k}: {v}" for k, v in report.category_counts.items())
-        self.lbl_breakdown.config(text=cat_summary or "None")
-
-        self.status_var.set(f"✅ Dry-run scan complete! {report.total_scanned} files analyzed in {report.duration_seconds:.2f}s.")
+        self.active_file_var.set(f"✨ Ready! {report.total_scanned} files analyzed in {report.duration_seconds:.2f}s ({format_bytes(report.duplicate_saved_bytes)} saveable).")
+        self.status_var.set(f"Dry-run scan complete! Click '🚀 2. EXECUTE SORTING' to begin.")
 
     def _on_execute(self):
         try:
@@ -413,7 +423,7 @@ class LensortGUI:
             return
 
         if not self.current_report or not self.current_report.planned_operations:
-            messagebox.showwarning("Notice", "Please click '🔍 RUN DRY-RUN PREVIEW' first to analyze your files.")
+            messagebox.showwarning("Notice", "Please click '🔍 1. RUN DRY-RUN PREVIEW' first to analyze your files.")
             return
 
         confirm_msg = (
@@ -427,21 +437,39 @@ class LensortGUI:
         if not messagebox.askyesno("Confirm Organization", confirm_msg):
             return
 
-        self.status_var.set(f"🚀 Executing {action.upper()} operations...")
-        self.btn_execute.configure(state=tk.DISABLED)
+        self.btn_execute.configure(state=tk.DISABLED, text="🚀 Sorting Live...")
+        self.progress_pct_var.set(0.0)
+
+        def on_sort_progress(data: dict):
+            self.root.after(0, lambda: self._handle_sort_progress(data))
 
         def worker():
             sorter = GallerySorter(config)
-            rep = sorter.execute(self.current_report)
+            rep = sorter.execute(self.current_report, progress_callback=on_sort_progress)
             self.root.after(0, lambda: self._on_execute_complete(rep))
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _handle_sort_progress(self, data: dict):
+        current = data.get("current", 0)
+        total = max(1, data.get("total", 1))
+        pct = (current / total) * 100.0
+        self.progress_pct_var.set(pct)
+
+        filename = data.get("file", "")
+        target = data.get("target", "")
+        if filename:
+            self.active_file_var.set(f"🚀 Moving [{filename}]  ────────►  📁 {target}")
+            self.status_var.set(f"Sorting in progress: {current} / {total} files ({pct:.1f}%)")
+
     def _on_execute_complete(self, report: SortReport):
-        self.btn_execute.configure(state=tk.NORMAL)
+        self.btn_execute.configure(state=tk.NORMAL, text="🚀  2. EXECUTE SORTING")
+        self.progress_pct_var.set(100.0)
         self.manifest_path = report.manifest_path
 
-        self.status_var.set(f"✅ Sorting complete! Manifest saved.")
+        self.active_file_var.set("🎉 All files sorted successfully!")
+        self.status_var.set(f"✅ Organization complete! Manifest saved.")
+
         msg = f"Organization successfully completed!\n\nManifest saved to:\n{report.manifest_path}\n\nYou can undo this anytime using the '1-Click Undo' button."
         messagebox.showinfo("Success", msg)
 

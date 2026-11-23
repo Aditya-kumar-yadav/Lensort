@@ -79,8 +79,9 @@ class GallerySorter:
 
         return sorted(files)
 
-    def plan(self) -> SortReport:
-        """Scan, extract metadata, classify, identify duplicates, and plan destinations."""
+    def plan(self, progress_callback=None) -> SortReport:
+        """Scan, extract metadata in parallel, classify, detect duplicates, and stream live operations."""
+        import concurrent.futures
         start_time = datetime.now()
         report = SortReport(action=self.config.action)
 
@@ -91,18 +92,50 @@ class GallerySorter:
             report.duration_seconds = (datetime.now() - start_time).total_seconds()
             return report
 
-        # Step 1: Extract Metadata for each file
+        # Step 1: Parallel Metadata Extraction with live progress
         metadata_map: Dict[Path, FileMetadata] = {}
-        for p in files:
-            meta = FileMetadata(p)
-            metadata_map[p] = meta
-            report.total_size_bytes += meta.file_size
+        processed_count = 0
+        total_files = len(files)
+
+        # Notify start
+        if progress_callback:
+            progress_callback({
+                "stage": "scanning",
+                "current": 0,
+                "total": total_files,
+                "file": "",
+                "category": "",
+                "target": ""
+            })
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+            future_to_path = {executor.submit(FileMetadata, p): p for p in files}
+            for future in concurrent.futures.as_completed(future_to_path):
+                p = future_to_path[future]
+                try:
+                    meta = future.result()
+                except Exception:
+                    meta = FileMetadata(p)
+                metadata_map[p] = meta
+                report.total_size_bytes += meta.file_size
+                processed_count += 1
+
+                if progress_callback and (processed_count % 15 == 0 or processed_count == total_files):
+                    category_hint = MediaClassifier.classify(meta)
+                    progress_callback({
+                        "stage": "analyzing",
+                        "current": processed_count,
+                        "total": total_files,
+                        "file": meta.filename,
+                        "category": category_hint,
+                        "target": f"📁 {category_hint}/..."
+                    })
 
         # Step 2: Duplicate Detection
         exact_dups: Set[Path] = set()
         exact_hash_map: Dict[str, List[Path]] = {}
         similar_dups_list: List[Tuple[Path, Path, int]] = []
-        similar_dup_map: Dict[Path, Tuple[Path, int]] = {} # dup -> (orig, dist)
+        similar_dup_map: Dict[Path, Tuple[Path, int]] = {}
 
         if self.config.detect_duplicates:
             exact_hash_map, exact_dups = DuplicateDetector.find_exact_duplicates(files)
@@ -118,13 +151,12 @@ class GallerySorter:
                 for orig, dup, dist in similar_dups_list:
                     similar_dup_map[dup] = (orig, dist)
 
-        # Track space that can be reclaimed
         for dup in exact_dups:
             report.duplicate_saved_bytes += metadata_map[dup].file_size
         for dup in similar_dup_map:
             report.duplicate_saved_bytes += metadata_map[dup].file_size
 
-        # Step 3: Plan Destinations for Each File
+        # Step 3: Stream Planned Destinations
         dest_taken_names: Set[Path] = set()
         operations: List[PlannedOperation] = []
 
@@ -133,7 +165,7 @@ class GallerySorter:
             "July", "August", "September", "October", "November", "December"
         ]
 
-        for p in files:
+        for idx, p in enumerate(files):
             meta = metadata_map[p]
             category = MediaClassifier.classify(meta)
             report.category_counts[category] = report.category_counts.get(category, 0) + 1
@@ -151,7 +183,6 @@ class GallerySorter:
             if p in exact_dups:
                 is_dup = True
                 dup_type = "exact"
-                # Find original
                 fhash = DuplicateDetector.compute_sha256(p)
                 all_with_hash = exact_hash_map.get(fhash, [])
                 dup_of = all_with_hash[0] if all_with_hash else None
@@ -160,20 +191,17 @@ class GallerySorter:
                 dup_type = "similar"
                 dup_of = similar_dup_map[p][0]
 
-            # Determine Target Folder
             if is_dup and self.config.duplicate_action == "isolate":
                 target_folder = self.config.dest_dir / "_Duplicates" / (
                     "Exact" if dup_type == "exact" else "Similar"
                 ) / year_str
             elif is_dup and self.config.duplicate_action == "skip":
-                # Marked to be skipped
                 target_folder = self.config.dest_dir / "_Skipped_Duplicates"
             else:
                 target_folder = self._compute_target_folder(
                     meta, category, year_str, month_num_str, month_name, date_folder_str
                 )
 
-            # Resolve filename collisions in target folder
             final_dest = self._resolve_collision(target_folder / p.name, dest_taken_names)
             dest_taken_names.add(final_dest)
 
@@ -188,6 +216,23 @@ class GallerySorter:
                 file_size=meta.file_size
             )
             operations.append(op)
+
+            if progress_callback and (idx % 20 == 0 or idx == len(files) - 1):
+                progress_callback({
+                    "stage": "planning",
+                    "current": idx + 1,
+                    "total": len(files),
+                    "file": p.name,
+                    "category": category,
+                    "target": str(final_dest.parent.name),
+                    "operation": op,
+                    "category_counts": dict(report.category_counts),
+                    "duplicates_count": report.exact_duplicates_count + report.similar_duplicates_count
+                })
+
+        report.planned_operations = operations
+        report.duration_seconds = (datetime.now() - start_time).total_seconds()
+        return report
 
         report.planned_operations = operations
         report.duration_seconds = (datetime.now() - start_time).total_seconds()
@@ -274,15 +319,16 @@ class GallerySorter:
                 return new_path
             counter += 1
 
-    def execute(self, report: SortReport) -> SortReport:
-        """Executes the planned operations (copy, move, hardlink)."""
+    def execute(self, report: SortReport, progress_callback=None) -> SortReport:
+        """Executes the planned operations (copy, move, hardlink) with live progress streaming."""
         action = self.config.action
         if action == "dry-run":
             return report
 
         manifest_ops = []
+        total = len(report.planned_operations)
 
-        for op in report.planned_operations:
+        for idx, op in enumerate(report.planned_operations):
             # Skip duplicate if duplicate_action is 'skip'
             if op.is_duplicate and self.config.duplicate_action == "skip":
                 op.status = "skipped"
@@ -302,7 +348,6 @@ class GallerySorter:
                         os.link(op.source_path, op.dest_path)
                         op.status = "success"
                     except OSError:
-                        # Fallback to copy if cross-filesystem
                         shutil.copy2(op.source_path, op.dest_path)
                         op.status = "success"
 
@@ -317,6 +362,16 @@ class GallerySorter:
             except Exception as e:
                 op.status = "failed"
                 op.error = str(e)
+
+            if progress_callback and (idx % 10 == 0 or idx == total - 1):
+                progress_callback({
+                    "stage": "sorting",
+                    "current": idx + 1,
+                    "total": total,
+                    "file": op.source_path.name,
+                    "category": op.category,
+                    "target": str(op.dest_path.parent.name)
+                })
 
         # Write manifest file for undo
         if self.config.create_undo_manifest and manifest_ops:
