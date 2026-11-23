@@ -13,6 +13,10 @@
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=for-the-badge" alt="Cross-Platform">
 </p>
 
+<p align="center">
+  <img src="demo.gif" alt="Lensort Live Sorting Demo" width="920">
+</p>
+
 ---
 
 ## ⚡ The Benchmark (Real-World Test on 3,481 Media Files)
