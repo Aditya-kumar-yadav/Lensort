@@ -1,0 +1,16 @@
+[package]
+name = "lensort"
+version = "1.0.0"
+edition = "2021"
+authors = ["Aditya Kumar Yadav"]
+description = "Blazing-fast zero-dependency Rust photo and media sorter with EXIF, multithreaded scanning, and duplicate detection."
+
+[dependencies]
+walkdir = "2.5"
+rayon = "1.10"
+kamadak-exif = "0.6"
+sha2 = "0.10"
+chrono = "0.4"
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

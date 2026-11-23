@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Rust build artifacts
+rust_engine/target/
+target/
+
+# Binaries & executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Packaging & Distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Temporary / Session manifests & test artifacts
+.sort_manifest_*.json
+sample_messy_downloads/
+sample_organized_output/
+.pytest_cache/
+
+# OS & IDE metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lensort"
+version = "1.0.0"
+authors = [
+  { name = "Aditya Kumar Yadav" }
+]
+description = "Next-gen smart media sorter & organizer with EXIF, GPS, and duplicate detection for any PC."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "Pillow>=10.0.0",
+    "rich>=13.0.0"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Utilities"
+]
+
+[project.scripts]
+lensort = "gallery_sorter.cli:main"
+gsort = "gallery_sorter.cli:main"
