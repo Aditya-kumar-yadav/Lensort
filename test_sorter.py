@@ -1,5 +1,5 @@
 """
-Comprehensive Test Suite for LuminaSort.
+Comprehensive Test Suite for Lensort.
 Creates mock photos, screenshots, WhatsApp media, EXIF/GPS tags, and tests the entire pipeline:
 1. Metadata & EXIF extraction
 2. Offline reverse geocoding
@@ -22,9 +22,9 @@ from gallery_sorter.geocoder import reverse_geocode
 from gallery_sorter.metadata import FileMetadata
 from gallery_sorter.duplicates import DuplicateDetector
 
-class TestLuminaSort(unittest.TestCase):
+class TestLensort(unittest.TestCase):
     def setUp(self):
-        self.test_dir = Path(tempfile.mkdtemp(prefix="luminasort_test_"))
+        self.test_dir = Path(tempfile.mkdtemp(prefix="lensort_test_"))
         self.source_dir = self.test_dir / "Source_Messy"
         self.source_dir.mkdir(parents=True)
         self.dest_dir = self.test_dir / "Organized_Gallery"

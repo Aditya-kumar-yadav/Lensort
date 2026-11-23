@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LuminaSort Entry Point.
+Lensort Entry Point.
 Run directly via:
     python main.py <source_dir> [options]
 """

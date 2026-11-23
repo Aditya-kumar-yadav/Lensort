@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Desktop Graphical Launcher for LuminaSort.
+Desktop Graphical Launcher for Lensort.
 Run with:
     python gui.py
 """

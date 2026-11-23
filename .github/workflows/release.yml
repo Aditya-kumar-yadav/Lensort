@@ -14,20 +14,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: luminasort-rs
-            artifact_name: luminasort-linux-x86_64
+            binary_name: lensort
+            artifact_name: lensort-linux-x86_64
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: luminasort-rs
-            artifact_name: luminasort-macos-intel
+            binary_name: lensort
+            artifact_name: lensort-macos-intel
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: luminasort-rs
-            artifact_name: luminasort-macos-apple-silicon
+            binary_name: lensort
+            artifact_name: lensort-macos-apple-silicon
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: luminasort-rs.exe
-            artifact_name: luminasort-windows-x64.exe
+            binary_name: lensort.exe
+            artifact_name: lensort-windows-x64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +54,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            luminasort-*/*
+            lensort-*/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

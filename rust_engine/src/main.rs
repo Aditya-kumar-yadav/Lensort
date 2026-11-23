@@ -330,7 +330,7 @@ fn main() {
     if let Ok(file) = File::create(&manifest_path) {
         let _ = serde_json::to_writer_pretty(file, &manifest);
         println!("✅ Manifest saved: {:?}", manifest_path);
-        println!("To undo: luminasort-rs --undo {:?}", manifest_path);
+        println!("To undo: lensort --undo {:?}", manifest_path);
     }
 }
 

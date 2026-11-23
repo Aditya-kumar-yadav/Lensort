@@ -1,5 +1,5 @@
 """
-Command Line Interface for LuminaSort.
+Command Line Interface for Lensort.
 """
 
 import sys
@@ -12,7 +12,7 @@ from .ui import TerminalUI
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="LuminaSort",
+        prog="Lensort",
         description="Smart Photo, Screenshot & Video Organizer for any PC with EXIF, GPS & Duplicate Detection.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -126,7 +126,7 @@ Examples:
 
 def interactive_wizard() -> OrganizerConfig:
     TerminalUI.show_banner()
-    print("\n🧙 Welcome to the LuminaSort Interactive Setup!\n")
+    print("\n🧙 Welcome to the Lensort Interactive Setup!\n")
 
     # 1. Source Dir
     while True:

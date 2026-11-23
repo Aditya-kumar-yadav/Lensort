@@ -138,7 +138,7 @@ python main.py -i
 
 ---
 
-### Method 3: Blazing-Fast Pure Rust Native Engine (`luminasort-rs`)
+### Method 3: Blazing-Fast Pure Rust Native Engine (`lensort-rs`)
 
 For power users organizing **10,000 to 100,000+ files**:
 
