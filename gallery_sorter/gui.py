@@ -266,7 +266,7 @@ class LensortGUI:
         tk.Label(src_box, text="SOURCE MEDIA", font=("Segoe UI", 7, "bold"), fg="#38bdf8", bg="#0f172a").pack(anchor=tk.W)
         self.lbl_src_file = tk.Label(
             src_box, textvariable=self.curr_source_file, font=("Segoe UI", 10, "bold"),
-            fg="#ffffff", bg="#0f172a", anchor=tk.W, no_wrap=True
+            fg="#ffffff", bg="#0f172a", anchor=tk.W
         )
         self.lbl_src_file.pack(fill=tk.X)
 
